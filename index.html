@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sneaks LAB — каталог</title>
+  <meta name="theme-color" content="#29A745">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #f6f7f8;
+      --card: #ffffff;
+      --text: #111111;
+      --muted: #666666;
+      --accent: #29A745;
+      --radius: 16px;
+      --shadow: 0 10px 30px rgba(0,0,0,.06);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Roboto', 'SF Pro Text', Arial, sans-serif; }
+    .container { max-width: 960px; margin: 0 auto; padding: 16px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 8px 0 16px; }
+    .logo { font-weight: 900; letter-spacing:.3px; font-size: 18px; display:flex; flex-direction:column; line-height:1; }
+    .logo .sneaks { padding:4px 10px; background:rgba(41,167,69,.1); color:var(--accent); border-radius:999px; font-size:12px; width:max-content; }
+    .logo .lab { font-size: 24px; }
+    .searchbar { position:relative; flex:1; }
+    .searchbar input { width:100%; padding:12px 44px 12px 14px; border-radius:12px; border:1px solid #e6e6e6; background:#fff; outline:none; font-size:14px; }
+    .searchbar button { position:absolute; right:6px; top:6px; bottom:6px; border:none; border-radius:10px; background:var(--accent); color:#fff; padding:0 12px; font-weight:700; cursor:pointer; }
+    .chips { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 4px; }
+    .chip { padding:8px 12px; border-radius:999px; background:#fff; border:1px solid #eee; cursor:pointer; font-size:13px; }
+    .chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .grid { display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; margin-top:12px; }
+    @media (max-width:640px) { .grid { grid-template-columns:1fr; } }
+    .card { background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; }
+    .card img { width:100%; height:240px; object-fit:cover; background:#f0f0f0; }
+    .card .body { padding:12px; display:flex; gap:10px; justify-content:space-between; align-items:flex-start; }
+    .title { font-weight:800; font-size:14px; line-height:1.25; }
+    .price { color:var(--accent); font-weight:900; }
+    .muted { color:var(--muted); font-size:12px; }
+    .actions { display:flex; gap:8px; padding:0 12px 12px; }
+    .btn { flex:1; border:none; border-radius:12px; padding:10px 12px; cursor:pointer; font-weight:800; }
+    .btn.primary { background:var(--accent); color:#fff; }
+    .btn.secondary { background:#f1f3f5; color:#222; }
+    .bar { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid #eee; padding:10px 12px; display:flex; gap:8px; align-items:center; }
+    .bar .sum { flex:1; font-weight:900; }
+    .hidden { display:none !important; }
+
+    /* Modal */
+    .modal-back { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
+    .modal { background:#fff; border-radius:16px; max-width:680px; width:100%; overflow:hidden; }
+    .modal .content { padding:16px; }
+    .sizes { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .size { border:1px solid #ddd; padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:700; }
+    .size.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <span class="sneaks">Sneaks</span>
+        <span class="lab">LAB</span>
+      </div>
+      <div class="searchbar">
+        <input id="search" placeholder="Найти модель или категорию…" />
+        <button id="clear">Сброс</button>
+      </div>
+    </header>
+
+    <div class="chips" id="chips"></div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="bar hidden" id="bar">
+    <div class="sum" id="sum">Корзина пуста</div>
+    <button class="btn primary" id="checkout">Оформить</button>
+  </div>
+
+  <div id="modalRoot" class="hidden"></div>
+
+<script>
+const CONFIG = {
+  JSON_URL: "REPLACE_WITH_YOUR_SHEET_JSON_URL",
+  ACCENT: "#29A745",
+  CURRENCY: "₽"
+};
+
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.MainButton.hide();
+  tg.setHeaderColor("secondary_bg_color");
+  tg.setBackgroundColor("#f6f7f8");
+}
+
+let catalog = [];
+let filtered = [];
+let cart = [];
+
+const chipsEl = document.getElementById('chips');
+const gridEl = document.getElementById('grid');
+const barEl = document.getElementById('bar');
+const sumEl = document.getElementById('sum');
+const searchEl = document.getElementById('search');
+document.getElementById('clear').onclick = () => { searchEl.value=''; renderGrid(catalog); };
+
+async function loadCatalog() {
+  try {
+    const res = await fetch("https://script.google.com/macros/s/AKfycbyfyHXuHkAq2yTRkW5ZwzbHHPNvkl9VOZAsQg8WeARk387eehqztKK9JAurpqU8szXb/exec");
+    const data = await res.json();
+    catalog = (data.items || data).map(x => ({ 
+      id: x.id || cryptoRandom(), 
+      title: x.title || x.name, 
+      price: Number(String(x.price||0).toString().replace(/\s|\u00A0/g,'')), 
+      category: x.category || 'Другое',
+      sizes: (x.sizes||'').toString().split(/[,\/\s]+/).filter(Boolean),
+      image: (x.images||x.image||'').toString().split(',')[0].trim(),
+      images: (x.images||x.image||'').toString().split(',').map(s=>s.trim()).filter(Boolean),
+      description: x.description || ''
+    }));
+    renderChips();
+    renderGrid(catalog);
+  } catch(e){
+    console.error(e);
+    gridEl.innerHTML = "<div class='muted'>Не удалось загрузить каталог. Проверь URL JSON.</div>";
+  }
+}
+
+function renderChips(){
+  const cats = Array.from(new Set(catalog.map(x=>x.category))).sort();
+  chipsEl.innerHTML = "<div class='chip active' data-cat='all'>Все</div>" + cats.map(c=>`<div class='chip' data-cat="${c}">${c}</div>`).join('');
+  for (const chip of chipsEl.querySelectorAll('.chip')) {
+    chip.onclick = () => {
+      for (const c of chipsEl.querySelectorAll('.chip')) c.classList.remove('active');
+      chip.classList.add('active');
+      const cat = chip.dataset.cat;
+      const data = cat==='all'?catalog:catalog.filter(x=>x.category===cat);
+      renderGrid(data);
+    }
+  }
+}
+
+function renderGrid(data){
+  const q = searchEl.value?.trim().toLowerCase();
+  filtered = data.filter(x => !q || (x.title?.toLowerCase().includes(q) || x.category?.toLowerCase().includes(q)));
+  gridEl.innerHTML = filtered.map(item => cardTpl(item)).join('');
+  bindCardEvents();
+}
+
+function cardTpl(item){
+  return `
+  <div class="card" data-id="${item.id}">
+    <img src="${item.image||''}" alt="${item.title}"/>
+    <div class="body">
+      <div>
+        <div class="title">${item.title}</div>
+        <div class="muted">${item.category}</div>
+      </div>
+      <div class="price">${fmt(item.price)} ${CONFIG.CURRENCY}</div>
+    </div>
+    <div class="actions">
+      <button class="btn secondary" data-action="details">Подробнее</button>
+      <button class="btn primary" data-action="add">В корзину</button>
+    </div>
+  </div>`;
+}
+
+function bindCardEvents(){
+  document.querySelectorAll('.card [data-action="add"]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.closest('.card').dataset.id;
+      addToCart(id);
+    }
+  });
+  document.querySelectorAll('.card [data-action="details"]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.closest('.card').dataset.id;
+      openModal(catalog.find(x=>x.id===id));
+    }
+  });
+}
+
+function addToCart(id, size=null){
+  const item = catalog.find(x=>x.id===id);
+  if(!item) return;
+  const key = id + (size? ("_"+size): "");
+  const found = cart.find(x=>x.key===key);
+  if(found) found.qty += 1;
+  else cart.push({key, id, title:item.title, price:item.price, size, qty:1 });
+  updateBar();
+  if (tg) tg.HapticFeedback?.notificationOccurred("success");
+}
+
+function updateBar(){
+  const total = cart.reduce((s,x)=>s + x.price * x.qty, 0);
+  if(total>0){
+    barEl.classList.remove('hidden');
+    sumEl.textContent = `Итого: ${fmt(total)} ${CONFIG.CURRENCY} (${cart.reduce((s,x)=>s+x.qty,0)} шт.)`;
+  } else {
+    barEl.classList.add('hidden');
+  }
+}
+
+document.getElementById('checkout').onclick = () => checkout();
+
+function openModal(item){
+  const root = document.getElementById('modalRoot');
+  root.className = 'modal-back';
+  const sizes = (item.sizes||[]).map(s => `<div class='size' data-size='${s}'>${s}</div>`).join('');
+  root.innerHTML = `
+    <div class="modal">
+      <img src="${item.image}" style="width:100%;height:300px;object-fit:cover;" />
+      <div class="content">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+          <div>
+            <div class="title" style="font-size:18px">${item.title}</div>
+            <div class="muted">${item.category}</div>
+          </div>
+          <div class="price" style="font-size:18px">${fmt(item.price)} ${CONFIG.CURRENCY}</div>
+        </div>
+        ${sizes? `<div class="sizes" id="sizes">${sizes}</div>`: ''}
+        <div class="muted" style="margin-top:8px;">${item.description||''}</div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button class="btn secondary" id="close">Закрыть</button>
+          <button class="btn primary" id="add">В корзину</button>
+        </div>
+      </div>
+    </div>`;
+  root.onclick = (e)=>{ if(e.target===root) closeModal(); };
+  document.getElementById('close').onclick = closeModal;
+  document.getElementById('add').onclick = () => {
+    const sizeEl = document.querySelector('.size.active');
+    addToCart(item.id, sizeEl? sizeEl.dataset.size : null);
+    closeModal();
+  };
+  document.querySelectorAll('.size').forEach(s => {
+    s.onclick = () => {
+      document.querySelectorAll('.size').forEach(x=>x.classList.remove('active'));
+      s.classList.add('active');
+    }
+  });
+}
+
+function closeModal(){
+  const root = document.getElementById('modalRoot');
+  root.className = 'hidden';
+  root.innerHTML = '';
+}
+
+function fmt(n){ return (n||0).toLocaleString('ru-RU'); }
+function cryptoRandom(){
+  return 'id'+Math.random().toString(36).slice(2)+Date.now().toString(36);
+}
+
+async function checkout(){
+  if(!tg) { alert("Оформление работает внутри Telegram."); return; }
+  tg.MainButton.setText("Отправить заказ");
+  tg.MainButton.onClick(async () => {
+    try {
+      const payload = {
+        user: tg.initDataUnsafe?.user || null,
+        order: cart,
+        total: cart.reduce((s,x)=>s + x.price * x.qty, 0)
+      };
+      const res = await fetch("REPLACE_WITH_YOUR_BACKEND_ORDER_URL", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ initData: tg.initData, payload })
+      });
+      if(!res.ok) throw new Error("Network");
+      const out = await res.json();
+      tg.showAlert(out.message || "Заказ отправлен!");
+      cart = []; updateBar();
+      tg.MainButton.hide();
+    } catch(e){
+      tg.showAlert("Не удалось отправить заказ. Попробуйте позже.");
+    }
+  });
+  tg.MainButton.show();
+}
+
+searchEl.addEventListener('input', () => renderGrid(catalog));
+loadCatalog();
+</script>
+</body>
+</html>
