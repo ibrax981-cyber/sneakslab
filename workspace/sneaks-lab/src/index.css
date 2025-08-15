@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0a;
+  --color-neon-400: #57ff38;
+  --color-neon-500: #39FF14;
+  --color-neon-600: #15d100;
+  --color-accent: #00FFC6;
+  --shadow-neon: 0 0 8px rgba(57,255,20,0.5);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer components {
+  .container-mobile {
+    @apply mx-auto w-full max-w-[420px] px-4; /* Mobile-first width */
+  }
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-3 text-sm font-medium transition-colors;
+  }
+  .btn-primary {
+    @apply btn bg-black text-white hover:bg-gray-900 active:bg-gray-800;
+  }
+  .btn-outline {
+    @apply btn border border-gray-200 bg-white text-black hover:bg-gray-50 active:bg-gray-100;
+  }
+  .btn-neon {
+    @apply btn bg-neon-500 text-black shadow-neon hover:bg-neon-400 active:bg-neon-600;
+  }
+  .card {
+    @apply rounded-xl border border-gray-200 bg-white shadow-sm;
+  }
+}
+
+/***** Utilities *****/
+.safe-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 68px);
+}
